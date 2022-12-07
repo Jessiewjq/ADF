@@ -1,0 +1,9 @@
+{
+	"name": "jessiewu",
+	"location": "centralus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "0accbe5d-da6a-446a-b0b6-842add9f331d",
+		"tenantId": "8b69c050-5c2c-49a3-89e7-02dee05b5b8c"
+	}
+}
