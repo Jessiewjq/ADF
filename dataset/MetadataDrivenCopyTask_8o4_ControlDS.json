@@ -1,0 +1,19 @@
+{
+	"name": "MetadataDrivenCopyTask_8o4_ControlDS",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "linkedService1",
+			"type": "LinkedServiceReference"
+		},
+		"folder": {
+			"name": "MetadataDrivenCopyTask_8o4_20230110"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "Sales",
+			"table": "Orders"
+		}
+	}
+}
