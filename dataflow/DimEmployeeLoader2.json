@@ -1,0 +1,273 @@
+{
+	"name": "DimEmployeeLoader2",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "wwi_OLTP",
+						"type": "DatasetReference"
+					},
+					"name": "oltp",
+					"description": " Source employees file, changes every day"
+				},
+				{
+					"dataset": {
+						"referenceName": "AzureSqlTable1",
+						"type": "DatasetReference"
+					},
+					"name": "olap",
+					"description": "Current rows in DimEmployees DW table"
+				}
+			],
+			"sinks": [
+				{
+					"dataset": {
+						"referenceName": "AzureSqlTable1",
+						"type": "DatasetReference"
+					},
+					"name": "sinkNew",
+					"description": " "
+				},
+				{
+					"dataset": {
+						"referenceName": "AzureSqlTable1",
+						"type": "DatasetReference"
+					},
+					"name": "sinkUpdates",
+					"description": " "
+				},
+				{
+					"dataset": {
+						"referenceName": "AzureSqlTable1",
+						"type": "DatasetReference"
+					},
+					"name": "sinkInactive",
+					"description": " Age out old rows"
+				}
+			],
+			"transformations": [
+				{
+					"name": "TypeConversions"
+				},
+				{
+					"name": "TypeConversionsAndSetAttrs"
+				},
+				{
+					"name": "LookupIDs"
+				},
+				{
+					"name": "ConditionalSplit1"
+				},
+				{
+					"name": "checkForChanges"
+				},
+				{
+					"name": "SetAttrsForNew"
+				},
+				{
+					"name": "SetAttrsInactive",
+					"description": "make iscurrent 0"
+				},
+				{
+					"name": "SetAttrsUpdate"
+				},
+				{
+					"name": "NormNames"
+				},
+				{
+					"name": "InactiveFields"
+				},
+				{
+					"name": "AlterRow1"
+				},
+				{
+					"name": "NullFilter",
+					"description": "Filter out NULLs from source file"
+				},
+				{
+					"name": "NameNorm2"
+				}
+			],
+			"scriptLines": [
+				"source(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false,",
+				"     purgeFiles: true,",
+				"     wildcardPaths:['SampleData/Emps/today/*.csv']) ~> oltp",
+				"source(output(",
+				"          OrderID as integer,",
+				"          CustomerID as integer,",
+				"          SalespersonPersonID as integer,",
+				"          PickedByPersonID as integer,",
+				"          ContactPersonID as integer,",
+				"          BackorderOrderID as integer,",
+				"          OrderDate as date,",
+				"          ExpectedDeliveryDate as date,",
+				"          CustomerPurchaseOrderNumber as string,",
+				"          IsUndersupplyBackordered as boolean,",
+				"          Comments as string,",
+				"          DeliveryInstructions as string,",
+				"          InternalComments as string,",
+				"          PickingCompletedWhen as timestamp,",
+				"          LastEditedBy as integer,",
+				"          LastEditedWhen as timestamp",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> olap",
+				"olap derive(OrderID = toInteger(OrderID)) ~> TypeConversions",
+				"NullFilter derive(OrderID = toInteger(OrderID),",
+				"          ExpectedDeliveryDate = toDate(ExpectedDeliveryDate,'MM/dd/yyyy'),",
+				"          OrderDate = toDate(OrderDate,'MM/dd/yyyy'),",
+				"          CustomerID = toInteger(CustomerID)) ~> TypeConversionsAndSetAttrs",
+				"TypeConversionsAndSetAttrs, TypeConversions lookup(TypeConversionsAndSetAttrs@OrderID == TypeConversions@OrderID,",
+				"     multiple: true,",
+				"     broadcast: 'auto')~> LookupIDs",
+				"NormNames split(isNull(iscurrent),",
+				"     disjoint: false) ~> ConditionalSplit1@(NewRow, CheckForUpdates)",
+				"NameNorm2, TypeConversions exists(NameNorm2@OrderID == TypeConversions@OrderID,",
+				"     negate:false,",
+				"     broadcast: 'auto')~> checkForChanges",
+				"ConditionalSplit1@NewRow derive(iscurrent = 1,",
+				"          surrogatekey = toString(crc32(OrderID,EmpFunction))) ~> SetAttrsForNew",
+				"checkForChanges derive(iscurrent = 0) ~> SetAttrsInactive",
+				"checkForChanges derive(iscurrent = 1) ~> SetAttrsUpdate",
+				"LookupIDs select(mapColumn(",
+				"          OrderID = TypeConversionsAndSetAttrs@OrderID,",
+				"          Region = oltp@Region,",
+				"          Status = oltp@Status,",
+				"          Level = oltp@Level,",
+				"          Role = oltp@Role,",
+				"          expecteddeliveryDate = ExpectedDeliveryDate,",
+				"          orderDate = OrderDate,",
+				"          Function,",
+				"          iscurrent,",
+				"          processtime,",
+				"          surrogatekey",
+				"     ),",
+				"     skipDuplicateMapInputs: false,",
+				"     skipDuplicateMapOutputs: false) ~> NormNames",
+				"SetAttrsInactive select(mapColumn(",
+				"          OrderID,",
+				"          Status,",
+				"          OrderDate,",
+				"          iscurrent,",
+				"          processtime",
+				"     ),",
+				"     skipDuplicateMapInputs: false,",
+				"     skipDuplicateMapOutputs: false) ~> InactiveFields",
+				"InactiveFields alterRow(updateIf(true())) ~> AlterRow1",
+				"oltp filter(!isNull(OrderID)) ~> NullFilter",
+				"ConditionalSplit1@CheckForUpdates select(mapColumn(",
+				"          OrderID,",
+				"          expecteddeliverydate = expecteddeliveryDate,",
+				"          Status,",
+				"          Level,",
+				"          Role,",
+				"          expecteddeliveryDate,",
+				"          OrderDate = orderDate,",
+				"          Function = EmpFunction,",
+				"          iscurrent,",
+				"          processtime,",
+				"          surrogatekey",
+				"     ),",
+				"     skipDuplicateMapInputs: false,",
+				"     skipDuplicateMapOutputs: false) ~> NameNorm2",
+				"SetAttrsForNew sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          OrderID as integer,",
+				"          CustomerID as integer,",
+				"          SalespersonPersonID as integer,",
+				"          PickedByPersonID as integer,",
+				"          ContactPersonID as integer,",
+				"          BackorderOrderID as integer,",
+				"          OrderDate as date,",
+				"          ExpectedDeliveryDate as date,",
+				"          CustomerPurchaseOrderNumber as string,",
+				"          IsUndersupplyBackordered as boolean,",
+				"          Comments as string,",
+				"          DeliveryInstructions as string,",
+				"          InternalComments as string,",
+				"          PickingCompletedWhen as timestamp,",
+				"          LastEditedBy as integer,",
+				"          LastEditedWhen as timestamp",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:true,",
+				"     updateable:false,",
+				"     upsertable:false,",
+				"     format: 'table',",
+				"     batchSize: 50,",
+				"     errorHandlingOption: 'stopOnFirstError',",
+				"     partitionBy('roundRobin', 4)) ~> sinkNew",
+				"SetAttrsUpdate sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          OrderID as integer,",
+				"          CustomerID as integer,",
+				"          SalespersonPersonID as integer,",
+				"          PickedByPersonID as integer,",
+				"          ContactPersonID as integer,",
+				"          BackorderOrderID as integer,",
+				"          OrderDate as date,",
+				"          ExpectedDeliveryDate as date,",
+				"          CustomerPurchaseOrderNumber as string,",
+				"          IsUndersupplyBackordered as boolean,",
+				"          Comments as string,",
+				"          DeliveryInstructions as string,",
+				"          InternalComments as string,",
+				"          PickingCompletedWhen as timestamp,",
+				"          LastEditedBy as integer,",
+				"          LastEditedWhen as timestamp",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:true,",
+				"     updateable:false,",
+				"     upsertable:false,",
+				"     format: 'table',",
+				"     batchSize: 50,",
+				"     errorHandlingOption: 'stopOnFirstError',",
+				"     partitionBy('roundRobin', 4)) ~> sinkUpdates",
+				"AlterRow1 sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          OrderID as integer,",
+				"          CustomerID as integer,",
+				"          SalespersonPersonID as integer,",
+				"          PickedByPersonID as integer,",
+				"          ContactPersonID as integer,",
+				"          BackorderOrderID as integer,",
+				"          OrderDate as date,",
+				"          ExpectedDeliveryDate as date,",
+				"          CustomerPurchaseOrderNumber as string,",
+				"          IsUndersupplyBackordered as boolean,",
+				"          Comments as string,",
+				"          DeliveryInstructions as string,",
+				"          InternalComments as string,",
+				"          PickingCompletedWhen as timestamp,",
+				"          LastEditedBy as integer,",
+				"          LastEditedWhen as timestamp",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:false,",
+				"     updateable:true,",
+				"     upsertable:false,",
+				"     keys:['EmpID'],",
+				"     format: 'table',",
+				"     batchSize: 50,",
+				"     errorHandlingOption: 'stopOnFirstError',",
+				"     mapColumn(",
+				"          EmpID = OrderID,",
+				"          EndDate = OrderDate,",
+				"          iscurrent,",
+				"          processtime",
+				"     ),",
+				"     partitionBy('roundRobin', 4)) ~> sinkInactive"
+			]
+		}
+	}
+}
