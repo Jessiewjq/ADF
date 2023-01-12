@@ -3,7 +3,7 @@
 	"properties": {
 		"activities": [
 			{
-				"name": "LoadDimEmployee",
+				"name": "SCD Type2",
 				"type": "ExecuteDataFlow",
 				"dependsOn": [],
 				"policy": {
